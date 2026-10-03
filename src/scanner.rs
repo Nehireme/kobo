@@ -110,10 +110,28 @@ impl Scanner {
             c if c.is_ascii_digit() => self.number(),
             c if c.is_ascii_alphabetic() || c == '_' => self.identifier(),
             _ => self.error(self.line, "Unexpected character."),
-            
+
     }
 
     fn string(&mut self) {
+        let opening_line = self.line;
+        while self.peek() != '"' && !self.at_end() {
+            if self.peek() == '\n' {
+                self.line += 1;
+            }
+            self.advance();
+        }
+
+
+        if self.at_end() {
+            self.error(opening_line, "String is never closed.");
+            return;
+        }
+
+
+        self.advance();
+        self.add(TokenType::Str);
+
     }
 
     fn number(&mut self) {
