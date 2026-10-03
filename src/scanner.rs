@@ -23,7 +23,7 @@ struct Scanner {
     tokens: Vec<Token>,
     errors: Vec<String>,
 }
-
+//I can just add comments anywhere I want lol, imma do this randomly cos why not
 impl Scanner {
     fn run(&mut self) {
          while !self.at_end() {

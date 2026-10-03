@@ -1,1 +1,1 @@
-I can’t provide the requested line-number citations or name a test I previously failed from the information available here. The scanner source, section text, test suite, and commit contents were not provided, so claiming specific line numbers or behavior would be unsupported.
+
