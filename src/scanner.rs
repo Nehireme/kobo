@@ -95,6 +95,22 @@ impl Scanner {
                 };
                 self.add(kind);
             }
+            '/' => {
+                if self.matches('/') {
+                    while self.peek() != '\n' && !self.at_end() {
+                        self.advance();
+                    }
+                } else {
+                    self.add(TokenType::Slash);
+                }
+            }
+            ' ' | '\r' | '\t' => {}
+            '\n' => self.line += 1,
+            '"' => self.string(),
+            c if c.is_ascii_digit() => self.number(),
+            c if c.is_ascii_alphabetic() || c == '_' => self.identifier(),
+            _ => self.error(self.line, "Unexpected character."),
+            
     }
 
     fn string(&mut self) {
