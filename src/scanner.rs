@@ -42,27 +42,17 @@ impl Scanner {
     fn scan_token(&mut self) {
         let c = self.advance();
         match c {
-            '(' => self.add(TokenType::LeftParen),
-            ')' => self.add(TokenType::RightParen),
-            '{' => self.add(TokenType::LeftBrace),
-            '}' => self.add(TokenType::RightBrace),
+            '(' => self.add(TokenType::LParen),
+            ')' => self.add(TokenType::RParen),
+            '{' => self.add(TokenType::LBrace),
+            '}' => self.add(TokenType::RBrace),
             ',' => self.add(TokenType::Comma),
-            '.' => self.add(TokenType::Dot),
             '-' => self.add(TokenType::Minus),
             '+' => self.add(TokenType::Plus),
             ';' => self.add(TokenType::Semicolon),
             '*' => self.add(TokenType::Star),
             '&' => self.add(TokenType::And),
             '|' => self.add(TokenType::Or),
-            'else' => self.add(TokenType::Else),
-            'fun' => self.add(TokenType::Fun),
-            'if' => self.add(TokenType::If),
-            'nil' => self.add(TokenType::Nil),
-            'print' => self.add(TokenType::Print),
-            'return' => self.add(TokenType::Return),
-            'true' => self.add(TokenType::True),
-            'var' => self.add(TokenType::Var),
-            'while' => self.add(TokenType::While),
             '!' => {
                 let kind = if self.matches('=') {
                     TokenType::BangEqual
@@ -109,9 +99,9 @@ impl Scanner {
             '"' => self.string(),
             c if c.is_ascii_digit() => self.number(),
             c if c.is_ascii_alphabetic() || c == '_' => self.identifier(),
-            _ => self.error(self.line, "Unexpected character."),
-
+            _ => self.error(self.line, "Character is not part of any token."),
     }
+}
 
     fn string(&mut self) {
         let opening_line = self.line;
@@ -209,4 +199,4 @@ impl Scanner {
     fn error(&mut self, line: usize, message: &str) {
         self.errors.push(format!("[line {}] Error: {}", line, message));
     }
-}}
+}
