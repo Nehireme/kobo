@@ -1,1 +1,1 @@
-
+1. At 'src/scanner.rs:133', I use if self.peek() == '.' && self.peek_next().is_ascii_digit()to ensure that the scanner only takes in the '.' if it follwed by a digit therefore the'.' is part of the number. If the input is 5.,number() reads 5, then sees'.' but peek_next() returns '\0' at the end of input, so the condition fails. Section 1.4 requires exactly that a number is digits with an optional '.' and one or more digits, and 5. scans as 5 followed by an error, because . begins no token in Kobo.
