@@ -99,25 +99,18 @@ impl Parser {
     }
 
     fn statement_inner(&mut self) -> Parsed<Stmt> {
-        // TODO(you): spec 3.1: pick the statement by its leading token.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        // Named rather than misreported, so an `if` says what it is instead of failing
-        // as a broken expression.
-        if self.check(TokenType::LBrace) || self.check(TokenType::If)
-            || self.check(TokenType::While) || self.check(TokenType::Return)
-        {
-            self.error("This statement form is not written yet.");
-            return Err(());
-        }
         if self.matches(&[TokenType::Print]) {
-            let value = self.expression()?;
-            self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
-            Ok(Stmt::Print(value))
+            self.print_statement()
+        } else if self.matches(&[TokenType::Return]) {
+            self.return_statement()
+        } else if self.matches(&[TokenType::If]) {
+            self.if_statement()
+        } else if self.matches(&[TokenType::While]) {
+            self.while_statement()
+        } else if self.matches(&[TokenType::LBrace]) {
+            Ok(Stmt::Block { stmts: self.block()? })
         } else {
-            let expr = self.expression()?;
-            self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
-            Ok(Stmt::Expression(expr))
+            self.expression_statement()
         }
     }
 
@@ -151,7 +144,7 @@ impl Parser {
         let condition = self.expression()?;
         self.consume(TokenType::RParen, "Expect ')' after condition.")?;
         let body = Box::new(self.statement()?);
-        Ok(Stmt::While { condition, body })
+        Ok(Stmt::While { condition, body })    
     }
 
     /// The `{` is already consumed. Declarations, not statements: a block is where a
@@ -201,67 +194,110 @@ impl Parser {
     }
 
     fn or(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2, one rung of the precedence ladder.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        self.and()
+        let mut expr = self.and()?;
+        while self.matches(&[TokenType::Or]) {
+            let operator = self.previous();
+            let right = self.and()?;
+            expr = Expr::Logical { left: Box::new(expr), operator, right: Box::new(right) };
+        }
+        Ok(expr)
     }
 
     fn and(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2, one rung of the precedence ladder.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        self.equality()
+        let mut expr = self.equality()?;
+        while self.matches(&[TokenType::And]) {
+            let operator = self.previous();
+            let right = self.equality()?;
+            expr = Expr::Logical { left: Box::new(expr), operator, right: Box::new(right) };
+        }
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2, one rung of the precedence ladder.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        self.comparison()
+        let mut expr = self.comparison()?;
+        while self.matches(&[TokenType::BangEqual, TokenType::EqualEqual]) {
+            let operator = self.previous();
+            let right = self.comparison()?;
+            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+        }
+        Ok(expr)
     }
 
     fn comparison(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2, one rung of the precedence ladder.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        self.term()
+        let mut expr = self.term()?;
+        while self.matches(&[TokenType::Greater, TokenType::GreaterEqual, TokenType::Less, TokenType::LessEqual]) {
+            let operator = self.previous();
+            let right = self.term()?;
+            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+        }
+        Ok(expr)
     }
 
     fn term(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2, one rung of the precedence ladder.
-        todo!("term")
+        let mut expr = self.factor()?;
+        while self.matches(&[TokenType::Slash, TokenType::Star]) {
+            let operator = self.previous();
+            let right = self.factor()?;
+            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+        }
+        Ok(expr)
     }
 
     fn factor(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2, one rung of the precedence ladder.
-        todo!("factor")
+     let mut expr = self.unary()?;
+        while self.matches(&[TokenType::Minus, TokenType::Plus]) {
+            let operator = self.previous();
+            let right = self.unary()?;
+            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+        }
+        Ok(expr)
     }
 
     fn unary(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2: unary operators are right-associative.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
+        if self.matches(&[TokenType::Bang, TokenType::Minus]) {
+            let operator = self.previous();
+            let right = self.unary()?;
+            return Ok(Expr::Unary { operator, right: Box::new(right) });
+        }
         self.call()
     }
 
     /// A loop, not recursion: `f(1)(2)` is one callee called twice, and the grammar says
     /// `call → primary ( "(" arguments? ")" )*` for exactly that reason.
     fn call(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2: call -> primary ( '(' arguments? ')' )*. That is a loop, not
-        //            recursion; f(1)(2) is one callee called twice.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        self.primary()
+        let mut expr = self.primary()?;
+        loop {
+            if self.matches(&[TokenType::LParen]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
     }
 
     fn primary(&mut self) -> Parsed<Expr> {
-        // TODO(you): spec 3.2: literals, identifiers and grouping.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        if self.matches(&[TokenType::Number]) {
-            let n = self.previous().lexeme.parse::<f64>().unwrap();
-            return Ok(self.literal(Value::Number(n)));
+        if self.matches(&[TokenType::False]) {
+            return Ok(self.literal(Value::Bool(false)));
+        }
+        if self.matches(&[TokenType::True]) {
+            return Ok(self.literal(Value::Bool(true)));
+        }
+        if self.matches(&[TokenType::Nil]) {
+            return Ok(self.literal(Value::Nil));
+        }
+        if self.matches(&[TokenType::Number, TokenType::String]) {
+            let t = self.previous();
+            return Ok(self.literal(t.value));
+        }
+        if self.matches(&[TokenType::Identifier]) {
+            let t = self.previous();
+            return Ok(Expr::Variable { name: t.lexeme, line: t.line });
+        }
+        if self.matches(&[TokenType::LParen]) {
+            let expr = self.expression()?;
+            self.consume(TokenType::RParen, "Expect ')' after expression.")?;
+            return Ok(Expr::Grouping(Box::new(expr)));
         }
         self.error("Expect expression.");
         Err(())
@@ -278,16 +314,17 @@ impl Parser {
     /// the parse makes progress; a recovery that could stand still would hang the
     /// compiler on the file that triggered it.
     fn synchronise(&mut self) {
-        // TODO(you): spec 5.2: after an error, discard tokens until just past a ';' or on a
-        //            statement keyword, so one mistake costs one message.
-        // TEMPORARY: enough of this rule to let the ones below it run. Replace it in its
-        //            own week; the marking tests for it fail until you do.
-        self.depth = 0;
+        self.current += 1;
         while !self.at_end() {
-            self.current += 1;
             if self.previous().kind == TokenType::Semicolon {
                 return;
             }
+            match self.peek().kind {
+                TokenType::Fun | TokenType::Var | TokenType::If | TokenType::While
+                | TokenType::Print | TokenType::Return => return,
+                _ => {}
+            }
+            self.current += 1;
         }
     }
 
