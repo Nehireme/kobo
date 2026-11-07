@@ -45,7 +45,6 @@ impl Parser {
     // --- declarations and statements ------------------------------------------------
 
     fn declaration(&mut self) -> Parsed<Stmt> {
-        
         if self.matches(&[TokenType::Fun]) {
             self.fun_declaration()
         } else if self.matches(&[TokenType::Var]) {
@@ -56,18 +55,18 @@ impl Parser {
     }
 
     fn fun_declaration(&mut self) -> Parsed<Stmt> {
-
         let name_token = self.consume(TokenType::Identifier, "Expect function name.")?;
+        let name = name_token.lexeme;
         self.consume(TokenType::LParen, "Expect '(' after function name.")?;
-
         let mut params = Vec::new();
         if !self.check(TokenType::RParen) {
             loop {
                 if params.len() >= 255 {
-                    self.error("Can't have more than 255 parameters.");
+                    self.error("Cannot have more than 255 parameters.");
                 }
-                let param = self.consume(TokenType::Identifier, "Expect parameter name.")?;
-                params.push(param.lexeme);
+                let param_token =
+                    self.consume(TokenType::Identifier, "Expect parameter name.")?;
+                params.push(param_token.lexeme);
                 if !self.matches(&[TokenType::Comma]) {
                     break;
                 }
@@ -75,29 +74,21 @@ impl Parser {
         }
         self.consume(TokenType::RParen, "Expect ')' after parameters.")?;
         self.consume(TokenType::LBrace, "Expect '{' before function body.")?;
-
         let body = self.block()?;
-        let function_name = name_token.lexeme.clone();
-        let function = Function {
-            name: function_name.clone(),
-            params,
-            body,
-            line: name_token.line,
-        };
-
-        let index = self.program.functions.len();
-        self.program.functions.push(function);
-
-        Ok(Stmt::Function {
-            index,
-            name: function_name,
-            slot: None,
-        })
+        let slot = self.program.functions.len();
+        self.program.functions.push(Function { name: name.clone(), params, body });
+        Ok(Stmt::Fun { name, slot })
     }
 
     fn var_declaration(&mut self) -> Parsed<Stmt> {
-        // TODO(you): spec 3.1: 'var' name ( '=' expression )? ';'
-        todo!("var_declaration")
+        let name_token = self.consume(TokenType::Identifier, "Expect variable name.")?;
+        let name = name_token.lexeme;
+        let mut initializer = None;
+        if self.matches(&[TokenType::Equal]) {
+            initializer = Some(self.expression()?);
+        }
+        self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.")?;
+        Ok(Stmt::Var { name, initializer })
     }
 
     fn statement(&mut self) -> Parsed<Stmt> {
@@ -131,19 +122,36 @@ impl Parser {
     }
 
     fn return_statement(&mut self) -> Parsed<Stmt> {
-        // TODO(you): spec 3.1: 'return' expression? ';'
-        todo!("return_statement")
+        let keyword = self.previous();
+        let mut value = None;
+        if !self.check(TokenType::Semicolon) {
+            value = Some(self.expression()?);
+        }
+        self.consume(TokenType::Semicolon, "Expect ';' after return value.")?;
+        Ok(Stmt::Return { keyword, value })
     }
 
     fn if_statement(&mut self) -> Parsed<Stmt> {
-        // TODO(you): spec 3.1. The dangling else binds to the nearest unmatched if , the
-        //            recursion decides that, not the grammar.
-        todo!("if_statement")
+        self.consume(TokenType::LParen, "Expect '(' after 'if'.")?;
+        let condition = self.expression()?;
+        self.consume(TokenType::RParen, "Expect ')' after condition.")?;
+        let then_branch = Box::new(self.statement()?);
+        // Dangling else: `matches` is greedy, and the innermost `if` reaches this
+        // line first, so it takes the `else`. No grammar trick is involved.
+        let else_branch = if self.matches(&[TokenType::Else]) {
+            Some(Box::new(self.statement()?))
+        } else {
+            None
+        };
+        Ok(Stmt::If { condition, then_branch, else_branch })
     }
 
     fn while_statement(&mut self) -> Parsed<Stmt> {
-        // TODO(you): spec 3.1: 'while' '(' expression ')' statement
-        todo!("while_statement")
+        self.consume(TokenType::LParen, "Expect '(' after 'while'.")?;
+        let condition = self.expression()?;
+        self.consume(TokenType::RParen, "Expect ')' after condition.")?;
+        let body = Box::new(self.statement()?);
+        Ok(Stmt::While { condition, body })
     }
 
     /// The `{` is already consumed. Declarations, not statements: a block is where a
