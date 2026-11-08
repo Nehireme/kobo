@@ -129,7 +129,7 @@ impl Parser {
     fn if_statement(&mut self) -> Parsed<Stmt> {
         self.consume(TokenType::LParen, "Expect '(' after 'if'.")?;
         let condition = self.expression()?;
-        self.consume(TokenType::RParen, "Expect ')' after condition.")?;
+        self.consume(TokenType::RParen, "Expect ')' after if condition.")?;
         let then_branch = Box::new(self.statement()?);
         // Dangling else: `matches` is greedy, and the innermost `if` reaches this
         // line first, so it takes the `else`. No grammar trick is involved.
@@ -144,7 +144,7 @@ impl Parser {
     fn while_statement(&mut self) -> Parsed<Stmt> {
         self.consume(TokenType::LParen, "Expect '(' after 'while'.")?;
         let condition = self.expression()?;
-        self.consume(TokenType::RParen, "Expect ')' after condition.")?;
+        self.consume(TokenType::RParen, "Expect ')' after while condition.")?;
         let body = Box::new(self.statement()?);
         Ok(Stmt::While { condition, body })    
     }
@@ -318,7 +318,8 @@ impl Parser {
             return Ok(self.literal(Value::Number(n)));
         }
         if self.matches(&[TokenType::Str]) {
-            let s = self.previous().lexeme;
+            let lexeme = self.previous().lexeme;
+            let s = lexeme[1..lexeme.len() - 1].to_string(); // strip quotes
             return Ok(self.literal(Value::Str(s)));
         }
         if self.matches(&[TokenType::Identifier]) {
