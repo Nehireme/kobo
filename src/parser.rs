@@ -56,7 +56,7 @@ impl Parser {
 
     fn fun_declaration(&mut self) -> Parsed<Stmt> {
         let name_token = self.consume(TokenType::Identifier, "Expect function name.")?;
-        let name = name_token.lexeme;
+        let name = name_token.lexeme.clone();
         self.consume(TokenType::LParen, "Expect '(' after function name.")?;
         let mut params = Vec::new();
         if !self.check(TokenType::RParen) {
@@ -76,19 +76,18 @@ impl Parser {
         self.consume(TokenType::LBrace, "Expect '{' before function body.")?;
         let body = self.block()?;
         let slot = self.program.functions.len();
-        self.program.functions.push(Function { name: name.clone(), params, body });
-        Ok(Stmt::Fun { name, slot })
+        self.program.functions.push(Function { name: name.clone(), params, body, line: name_token.line });
+        Ok(Stmt::Function { index: slot, name, slot: None })
     }
 
     fn var_declaration(&mut self) -> Parsed<Stmt> {
         let name_token = self.consume(TokenType::Identifier, "Expect variable name.")?;
-        let name = name_token.lexeme;
         let mut initializer = None;
         if self.matches(&[TokenType::Equal]) {
             initializer = Some(self.expression()?);
         }
         self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.")?;
-        Ok(Stmt::Var { name, initializer })
+        Ok(Stmt::Var { name: name_token, initialiser: initializer, slot: None, })
     }
 
     fn statement(&mut self) -> Parsed<Stmt> {
@@ -100,7 +99,9 @@ impl Parser {
 
     fn statement_inner(&mut self) -> Parsed<Stmt> {
         if self.matches(&[TokenType::Print]) {
-            self.print_statement()
+           let value = self.expression()?;
+           self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+           Ok(Stmt::Print(value))
         } else if self.matches(&[TokenType::Return]) {
             self.return_statement()
         } else if self.matches(&[TokenType::If]) {
@@ -108,20 +109,21 @@ impl Parser {
         } else if self.matches(&[TokenType::While]) {
             self.while_statement()
         } else if self.matches(&[TokenType::LBrace]) {
-            Ok(Stmt::Block { stmts: self.block()? })
+            Ok(Stmt::Block { body: self.block()?, locals: 0 })
         } else {
-            self.expression_statement()
+            let expr = self.expression()?;
+            self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+            Ok(Stmt::Expression(expr))
         }
     }
 
     fn return_statement(&mut self) -> Parsed<Stmt> {
-        let keyword = self.previous();
         let mut value = None;
         if !self.check(TokenType::Semicolon) {
             value = Some(self.expression()?);
         }
         self.consume(TokenType::Semicolon, "Expect ';' after return value.")?;
-        Ok(Stmt::Return { keyword, value })
+        Ok(Stmt::Return(value))
     }
 
     fn if_statement(&mut self) -> Parsed<Stmt> {
@@ -184,13 +186,13 @@ impl Parser {
         if self.matches(&[TokenType::Equal]) {
             let equals = self.previous();
             let value = self.assignment()?;
-            if let Expr::Variable { name, line } = expr {
-                return Ok(Expr::Assign { name, value: Box::new(value), line });
+            if let Expr::Variable { name, .. } = expr {
+                return Ok(Expr::Assign { name, value: Box::new(value), at: Resolved::Global});
             }
             self.error_at(&equals, "Invalid assignment target.");
             return Err(());
         }
-        self.or()
+        Ok(expr)
     }
 
     fn or(&mut self) -> Parsed<Expr> {
@@ -198,7 +200,7 @@ impl Parser {
         while self.matches(&[TokenType::Or]) {
             let operator = self.previous();
             let right = self.and()?;
-            expr = Expr::Logical { left: Box::new(expr), operator, right: Box::new(right) };
+            expr = Expr::Logical { left: Box::new(expr), op: operator, right: Box::new(right) };
         }
         Ok(expr)
     }
@@ -208,7 +210,7 @@ impl Parser {
         while self.matches(&[TokenType::And]) {
             let operator = self.previous();
             let right = self.equality()?;
-            expr = Expr::Logical { left: Box::new(expr), operator, right: Box::new(right) };
+            expr = Expr::Logical { left: Box::new(expr), op: operator, right: Box::new(right) };
         }
         Ok(expr)
     }
@@ -218,7 +220,7 @@ impl Parser {
         while self.matches(&[TokenType::BangEqual, TokenType::EqualEqual]) {
             let operator = self.previous();
             let right = self.comparison()?;
-            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+            expr = Expr::Binary { left: Box::new(expr), op: operator, right: Box::new(right) };
         }
         Ok(expr)
     }
@@ -228,36 +230,40 @@ impl Parser {
         while self.matches(&[TokenType::Greater, TokenType::GreaterEqual, TokenType::Less, TokenType::LessEqual]) {
             let operator = self.previous();
             let right = self.term()?;
-            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+            expr = Expr::Binary { left: Box::new(expr), op: operator, right: Box::new(right) };
         }
         Ok(expr)
     }
 
     fn term(&mut self) -> Parsed<Expr> {
         let mut expr = self.factor()?;
-        while self.matches(&[TokenType::Slash, TokenType::Star]) {
+        while self.matches(&[TokenType::Minus, TokenType::Plus]) {
             let operator = self.previous();
             let right = self.factor()?;
-            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+            expr = Expr::Binary { left: Box::new(expr), op: operator, right: Box::new(right) };
         }
         Ok(expr)
     }
 
     fn factor(&mut self) -> Parsed<Expr> {
-     let mut expr = self.unary()?;
-        while self.matches(&[TokenType::Minus, TokenType::Plus]) {
+        let mut expr = self.unary()?;
+        while self.matches(&[TokenType::Slash, TokenType::Star]) {
             let operator = self.previous();
             let right = self.unary()?;
-            expr = Expr::Binary { left: Box::new(expr), operator, right: Box::new(right) };
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: operator,
+                right: Box::new(right),
+            };
         }
         Ok(expr)
     }
-
+    
     fn unary(&mut self) -> Parsed<Expr> {
         if self.matches(&[TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous();
             let right = self.unary()?;
-            return Ok(Expr::Unary { operator, right: Box::new(right) });
+            return Ok(Expr::Unary { op: operator, right: Box::new(right) });
         }
         self.call()
     }
@@ -276,6 +282,27 @@ impl Parser {
         Ok(expr)
     }
 
+    fn finish_call(&mut self, callee: Expr) -> Parsed<Expr> {
+        let mut args = Vec::new();
+        if !self.check(TokenType::RParen) {
+            loop {
+                if args.len() >= 255 {
+                    self.error("Can't have more than 255 arguments.");
+                }
+                args.push(self.expression()?);
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        let paren = self.consume(TokenType::RParen, "Expect ')' after arguments.")?;
+        Ok(Expr::Call {
+            callee: Box::new(callee),
+            paren,
+            args,
+        })
+    }
+
     fn primary(&mut self) -> Parsed<Expr> {
         if self.matches(&[TokenType::False]) {
             return Ok(self.literal(Value::Bool(false)));
@@ -286,13 +313,17 @@ impl Parser {
         if self.matches(&[TokenType::Nil]) {
             return Ok(self.literal(Value::Nil));
         }
-        if self.matches(&[TokenType::Number, TokenType::String]) {
-            let t = self.previous();
-            return Ok(self.literal(t.value));
+        if self.matches(&[TokenType::Number]) {
+            let n = self.previous().lexeme.parse::<f64>().unwrap();
+            return Ok(self.literal(Value::Number(n)));
+        }
+        if self.matches(&[TokenType::Str]) {
+            let s = self.previous().lexeme;
+            return Ok(self.literal(Value::Str(s)));
         }
         if self.matches(&[TokenType::Identifier]) {
             let t = self.previous();
-            return Ok(Expr::Variable { name: t.lexeme, line: t.line });
+            return Ok(Expr::Variable { name: t, at: Resolved::Global });
         }
         if self.matches(&[TokenType::LParen]) {
             let expr = self.expression()?;
@@ -314,7 +345,10 @@ impl Parser {
     /// the parse makes progress; a recovery that could stand still would hang the
     /// compiler on the file that triggered it.
     fn synchronise(&mut self) {
-        self.current += 1;
+        self.depth = 0;
+        if !self.at_end() {
+            self.current += 1;
+        }
         while !self.at_end() {
             if self.previous().kind == TokenType::Semicolon {
                 return;
